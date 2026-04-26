@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: wizardbot_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: wizard
+      POSTGRES_PASSWORD: wizard_password
+      POSTGRES_DB: wizardbot
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  bot:
+    build: .
+    container_name: wizardbot_app
+    restart: always
+    env_file: 
+      - .env
+    environment:
+      # Подключаемся к базе по имени сервиса (db) на стандартный порт 5432 внутри docker сети
+      - DATABASE_URL=postgresql://wizard:wizard_password@db:5432/wizardbot
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+    stdin_open: true
+    tty: true
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+volumes:
+  pgdata:
