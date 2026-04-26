@@ -166,6 +166,28 @@ class RemoveAllRolesFromUserTool(BaseTool):
             return "Ролей нет."
         return "Юзер не найден."
 
+class DeleteAllRolesTool(BaseTool):
+    name = "delete_all_roles"
+    async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
+        if not check_perms(ctx.user, manage_roles=True):
+            return "⛔ ОШИБКА: У вас нет прав на управление ролями."
+        
+        # Фильтруем роли: не managed (интеграции), не @everyone
+        roles = [r for r in ctx.guild.roles if not r.managed and not r.is_default()]
+        count = 0
+        errors = 0
+        for r in roles:
+            if can_touch_role(ctx.user, r):
+                try:
+                    await r.delete()
+                    count += 1
+                except:
+                    errors += 1
+            else:
+                errors += 1
+        
+        return f"Удалено {count} ролей. Ошибок (иерархия/права): {errors}."
+
 # Registering tools
 registry.register(CreateRoleTool())
 registry.register(EditRoleTool())
@@ -174,3 +196,4 @@ registry.register(AssignRoleToUserTool())
 registry.register(RemoveRoleFromUserTool())
 registry.register(AssignRoleToAllUsersTool())
 registry.register(RemoveAllRolesFromUserTool())
+registry.register(DeleteAllRolesTool())

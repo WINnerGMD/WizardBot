@@ -69,15 +69,17 @@ def build_overwrites(guild: discord.Guild, perm_list: List[Dict[str, Any]]) -> D
         return {}
     overwrites = {}
     for entry in perm_list:
+        if not isinstance(entry, dict):
+            continue
         target = resolve_role(guild, entry.get("target", ""))
         if not target:
             continue
         allow_perms = {}
         for p in (entry.get("allow") or []):
-            attr = PERM_MAP.get(p.lower())
+            attr = PERM_MAP.get(str(p).lower())
             if attr: allow_perms[attr] = True
         for p in (entry.get("deny") or []):
-            attr = PERM_MAP.get(p.lower())
+            attr = PERM_MAP.get(str(p).lower())
             if attr: allow_perms[attr] = False
         if allow_perms:
             overwrites[target] = discord.PermissionOverwrite(**allow_perms)

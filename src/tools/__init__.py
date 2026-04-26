@@ -5,6 +5,6 @@ import src.tools.discord.info
 import src.tools.discord.roles
 import src.tools.discord.channels
 import src.tools.discord.messaging
-
+import src.tools.ai.web
 def get_registry():
     return registry

@@ -65,9 +65,32 @@ class GeminiHandler:
         client, config, model_name, api_key = await self._create_instance(specialist_name)
         
         prompt = f"Твоя задача: {task}\nВыполни её и дай краткий отчет."
-        response = await self._safe_generate(client, model_name, [types.Content(role="user", parts=[types.Part(text=prompt)])], config, api_key)
+        current_contents = [types.Content(role="user", parts=[types.Part(text=prompt)])]
         
-        res_text = response.text if response else "Ошибка выполнения под-агента."
+        all_reports = []
+        for turn in range(5):
+            response = await self._safe_generate(client, model_name, current_contents, config, api_key, None)
+            if not response: break
+            
+            res_content = response.candidates[0].content
+            current_contents.append(res_content)
+            
+            tool_calls = [p.function_call for p in res_content.parts if p.function_call]
+            if not tool_calls:
+                break
+                
+            tool_responses, should_stop, report = await self._handle_calls(tool_calls, manager, None, None, None)
+            if report: all_reports.append(report)
+            current_contents.append(types.Content(role="user", parts=tool_responses))
+            if should_stop: break
+            
+        final_text = ""
+        if response and response.candidates and response.candidates[0].content.parts:
+            final_text = response.candidates[0].content.parts[0].text or ""
+            
+        res_text = final_text + ("\nТехт. отчет:\n" + "\n".join(all_reports) if all_reports else "")
+        if not res_text.strip(): res_text = "Завершено (без логов)."
+        
         self.worker_reports[specialist_name] = f"### Отчет {specialist_name}:\n{res_text}"
         return res_text
 
@@ -240,6 +263,34 @@ class GeminiHandler:
                 res = [await manager.execute_tool(a['action_name'], a['args']) for a in args.get('actions', [])]
                 should_stop = True
                 return name, "\n".join(res)
+            elif name == "create_pipeline":
+                nonlocal should_stop
+                steps = args.get("steps", [])
+                res_list = []
+                for s in steps:
+                    tool_name = s.get("tool")
+                    tool_args = s.get("args", {})
+                    out_var = s.get("out")
+                    if not tool_name: continue
+                    
+                    import re
+                    # Replace variables
+                    for k, v in tool_args.items():
+                        if isinstance(v, str) and v.startswith("{{") and v.endswith("}}"):
+                            var_name = v[2:-2]
+                            val = await manager.wait_for_shared_value(var_name, timeout=10.0)
+                            if val: tool_args[k] = str(val)
+                    
+                    res = str(await manager.execute_tool(tool_name, tool_args))
+                    res_list.append(res)
+                    
+                    if out_var:
+                        m = re.search(r'ID:\s*(\d+)', res)
+                        if m:
+                            manager.set_shared_value(out_var, m.group(1))
+                
+                should_stop = True
+                return name, "\n".join(res_list)
             else:
                 return name, await manager.execute_tool(name, args)
 

@@ -27,28 +27,33 @@ class AICommands(commands.Cog):
 
     @app_commands.command(name="prompt", description="Запустить ИИ без планирования (быстро)")
     async def prompt_cmd(self, interaction: discord.Interaction, query: str):
-        t0 = time.time()
-        print(f"[DEBUG] Prompt received at {t0}. Query: {query}")
-        
         # 1. Мгновенно бронируем взаимодействие (лимит 3 сек)
+        use_channel_fallback = False
         try:
-            if not interaction.response.is_done():
-                await interaction.response.defer()
-                print(f"[DEBUG] Defer success in {time.time() - t0:.3f}s")
-        except Exception as e:
-            print(f"[DEBUG] Defer FAILED after {time.time() - t0:.3f}s: {e}")
-            # Пытаемся сообщить об ошибке хотя бы через обычный канал, если возможно
-            return
+            await interaction.response.defer()
+        except discord.errors.NotFound:
+            print(f"[WARN] interaction.response.defer() 404. Falling back to channel.send for {interaction.user}")
+            use_channel_fallback = True
+
+        # fallback_message will track the sent message if interaction fails
+        fallback_msg = None
 
         # 2. Проверяем права после defer
         if not self._check_access(interaction):
-            await interaction.followup.send("⛔ Доступ ограничен.", ephemeral=True)
+            if use_channel_fallback:
+                await interaction.channel.send("⛔ Доступ ограничен.")
+            else:
+                await interaction.followup.send("⛔ Доступ ограничен.", ephemeral=True)
             return
 
         user_db = await billing_manager.get_user(interaction.user.id)
         is_owner = interaction.user.id == self.bot.admin_id
         if not is_owner and not user_db['is_admin'] and user_db['tokens'] <= 0:
-            await interaction.edit_original_response(content="⛔ У вас недостаточно токенов для выполнения этой команды.")
+            msg = "⛔ У вас недостаточно токенов для выполнения этой команды."
+            if use_channel_fallback:
+                await interaction.channel.send(msg)
+            else:
+                await interaction.edit_original_response(content=msg)
             return
 
         manager = DiscordManager(interaction.guild, self.bot, interaction)
@@ -62,6 +67,7 @@ class AICommands(commands.Cog):
         last_render = [0.0]
 
         async def status_cb(spec, text, nid, pid=None, status="running"):
+            nonlocal fallback_msg
             if nid not in board: 
                 board[nid] = {"spec": spec, "text": text, "tick": time.time(), "status": status, "pid": pid}
             else: 
@@ -71,24 +77,35 @@ class AICommands(commands.Cog):
             if time.time() - last_render[0] > 1.2 or status == "done":
                 last_render[0] = time.time()
                 try: 
-                    await interaction.edit_original_response(content=render_progress_board(board))
+                    if use_channel_fallback:
+                         if not fallback_msg:
+                             fallback_msg = await interaction.channel.send(content=render_progress_board(board))
+                         else:
+                             await fallback_msg.edit(content=render_progress_board(board))
+                    else:
+                        await interaction.edit_original_response(content=render_progress_board(board))
                 except discord.HTTPException as e:
                     if e.code in (50027, 10015): # Invalid Token / Unknown Webhook
                         pass # Просто игнорируем обновление статуса, если токен сдох
                     else:
                         print(f"[DEBUG] Status update failed: {e}")
 
-        perms = interaction.user.guild_permissions
-        perms_str = f"Admin: {perms.administrator}, Roles: {perms.manage_roles}, Channels: {perms.manage_channels}"
+        active_perms = [p for p, v in interaction.user.guild_permissions if v]
+        perms_str = ",".join(active_perms)
 
         is_done = False
         
         async def animation_loop():
+            nonlocal fallback_msg
             while not is_done:
                 try:
-                    await interaction.edit_original_response(content=render_progress_board(board))
+                    if use_channel_fallback:
+                        if fallback_msg:
+                            await fallback_msg.edit(content=render_progress_board(board))
+                    else:
+                        await interaction.edit_original_response(content=render_progress_board(board))
                 except: pass
-                await asyncio.sleep(0.8) # Discord rate limit is ~1s, 0.8 is aggressive but okay
+                await asyncio.sleep(2.0) # Замедляем, чтобы не спамить в API и не забивать канал
 
         # Запускаем цикл анимации в фоне
         anim_task = asyncio.create_task(animation_loop())
@@ -106,7 +123,11 @@ class AICommands(commands.Cog):
             # Финальное обновление борда
             try:
                 for k in board: board[k].update({"status": "done", "text": "Завершено"})
-                await interaction.edit_original_response(content=render_progress_board(board))
+                if use_channel_fallback:
+                    if fallback_msg:
+                        await fallback_msg.edit(content=render_progress_board(board))
+                else:
+                    await interaction.edit_original_response(content=render_progress_board(board))
             except: pass
             
             # Отправка премиум-отчета
@@ -147,8 +168,8 @@ class AICommands(commands.Cog):
             except: pass
 
         try:
-            usage = {"total": 0}
-            res = await self.bot.ai.processed_prompt(query, manager, status_cb, usage_context=usage, user_perms=str(interaction.user.guild_permissions), mode="consult")
+            active_perms = [p for p, v in interaction.user.guild_permissions if v]
+            res = await self.bot.ai.processed_prompt(query, manager, status_cb, usage_context=usage, user_perms=",".join(active_perms), mode="consult")
             await manager.send_premium_report(res)
         except Exception as e:
             await interaction.followup.send(f"Ошибка: {e}")

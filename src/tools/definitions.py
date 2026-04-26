@@ -470,7 +470,8 @@ TOOLS = [
             "• 'user_specialist' — manage members, assign/remove/create roles, query users\n"
             "• 'infra_architect' — manage channels, categories, rename/delete/create structure\n"
             "• 'mass_action_specialist' — bulk ops: assign role to all, rename all users, mass delete\n"
-            "• 'chat_specialist' — send embeds, webhook messages, read messages\n\n"
+            "• 'chat_specialist' — send embeds, webhook messages, read messages\n"
+            "• 'web_researcher' — search the web, read webpages, gather information\n\n"
             "Provide a 'task' (single) or 'tasks' array (parallel workers). "
             "Include ALL context in the task string: exact names, IDs if known, desired outcome."
         ),
@@ -479,8 +480,8 @@ TOOLS = [
             "properties": {
                 "specialist_name": {
                     "type": "STRING",
-                    "enum": ["user_specialist", "infra_architect", "mass_action_specialist", "chat_specialist"],
-                    "description": "The specialist to delegate to. Must be one of the four values above."
+                    "enum": ["user_specialist", "infra_architect", "mass_action_specialist", "chat_specialist", "web_researcher"],
+                    "description": "The specialist to delegate to. Must be one of the values above."
                 },
                 "task": {
                     "type": "STRING",
@@ -546,6 +547,35 @@ TOOLS = [
                 "verification_level": {"type": "STRING", "enum": ["none", "low", "medium", "high", "highest"], "description": "Security level"},
                 "default_notifications": {"type": "STRING", "enum": ["all_messages", "only_mentions"], "description": "Notification settings"}
             }
+        }
+    },
+    {
+        "name": "delete_all_roles",
+        "required_perm": "manage_roles",
+        "description": "Mass delete all custom roles on the server. Use with caution.",
+        "parameters": {"type": "OBJECT", "properties": {}}
+    },
+    {
+        "name": "search_web",
+        "description": "Search the internet for context, game wikis, rules, or any information.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "query": {"type": "STRING", "description": "Search query."},
+                "limit": {"type": "INTEGER", "description": "Number of results (1-10)."}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "read_webpage",
+        "description": "Read the text content of a specific webpage by URL.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "url": {"type": "STRING", "description": "Exact URL of the webpage to scrape."}
+            },
+            "required": ["url"]
         }
     }
 ]

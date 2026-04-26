@@ -10,32 +10,39 @@ class CreateCategoryTool(BaseTool):
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
         if not check_perms(ctx.user, manage_channels=True):
             return "⛔ ОШИБКА: У вас нет прав на управление каналами в Discord."
+        name = args.get('name')
+        if not name: return "⛔ ОШИБКА: Не указано имя категории."
         overwrites = build_overwrites(ctx.guild, args.get('permissions'))
-        cat = await ctx.guild.create_category(args['name'], overwrites=overwrites or None)
-        return f"Категория '{args['name']}' (ID: {cat.id}) создана."
+        cat = await ctx.guild.create_category(name, overwrites=overwrites or None)
+        return f"Категория '{name}' (ID: {cat.id}) создана."
 
 class CreateTextChannelTool(BaseTool):
     name = "create_text_channel"
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
         if not check_perms(ctx.user, manage_channels=True):
             return "⛔ ОШИБКА: У вас нет прав на управление каналами в Discord."
+        name = args.get('name')
+        if not name: return "⛔ ОШИБКА: Не указано имя канала."
         cat_ref = args.get('category_name', '')
         cat = ctx.guild.get_channel(int(cat_ref)) if str(cat_ref).isdigit() else discord.utils.get(ctx.guild.categories, name=cat_ref)
         overwrites = build_overwrites(ctx.guild, args.get('permissions'))
-        nsfw = args.get('nsfw', False)
-        ch = await ctx.guild.create_text_channel(args['name'], category=cat, overwrites=overwrites or None, nsfw=nsfw)
-        return f"Канал '{args['name']}' (ID: {ch.id}, NSFW: {nsfw}) создан."
+        raw_nsfw = args.get('nsfw', False)
+        nsfw = str(raw_nsfw).lower() == 'true' if isinstance(raw_nsfw, str) else bool(raw_nsfw)
+        ch = await ctx.guild.create_text_channel(name, category=cat, overwrites=overwrites or None, nsfw=nsfw)
+        return f"Канал '{name}' (ID: {ch.id}, NSFW: {nsfw}) создан."
 
 class CreateVoiceChannelTool(BaseTool):
     name = "create_voice_channel"
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
         if not check_perms(ctx.user, manage_channels=True):
             return "⛔ ОШИБКА: У вас нет прав на управление каналами в Discord."
+        name = args.get('name')
+        if not name: return "⛔ ОШИБКА: Не указано имя канала."
         cat_ref = args.get('category_name', '')
         cat = ctx.guild.get_channel(int(cat_ref)) if str(cat_ref).isdigit() else discord.utils.get(ctx.guild.categories, name=cat_ref)
         overwrites = build_overwrites(ctx.guild, args.get('permissions'))
-        ch = await ctx.guild.create_voice_channel(args['name'], category=cat, overwrites=overwrites or None)
-        return f"Голосовой канал '{args['name']}' (ID: {ch.id}) создан."
+        ch = await ctx.guild.create_voice_channel(name, category=cat, overwrites=overwrites or None)
+        return f"Голосовой канал '{name}' (ID: {ch.id}) создан."
 
 class EditChannelTool(BaseTool):
     name = "edit_channel"
@@ -54,18 +61,21 @@ class CreateForumChannelTool(BaseTool):
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
         if not check_perms(ctx.user, manage_channels=True):
             return "⛔ ОШИБКА: У вас нет прав на управление каналами в Discord."
+        name = args.get('name')
+        if not name: return "⛔ ОШИБКА: Не указано имя форума."
         cat_ref = args.get('category_name', '')
         cat = ctx.guild.get_channel(int(cat_ref)) if str(cat_ref).isdigit() else discord.utils.get(ctx.guild.categories, name=cat_ref)
         overwrites = build_overwrites(ctx.guild, args.get('permissions'))
         tags = [discord.ForumTag(name=t) for t in (args.get('tags') or [])]
+        topic = args.get('topic', '') or args.get('Topic', '')
         forum = await ctx.guild.create_forum(
-            name=args['name'], 
+            name=name, 
             category=cat, 
-            topic=args.get('Topic', ''), 
+            topic=topic, 
             overwrites=overwrites or None, 
             available_tags=tags
         )
-        return f"Форум {forum.name} создан."
+        return f"Форум '{forum.name}' создан."
 
 class DeleteChannelTool(BaseTool):
     name = "delete_channel"

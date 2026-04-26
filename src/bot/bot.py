@@ -1,5 +1,7 @@
 import discord
 import asyncio
+import os
+import sys
 from discord.ext import commands, tasks
 from typing import Dict, Any
 
@@ -14,7 +16,7 @@ class WizardBot(commands.Bot):
     
     def __init__(self, admin_id: int):
         intents = discord.Intents.all()
-        super().__init__(command_prefix="!", intents=intents, chunk_at_startup=False)
+        super().__init__(command_prefix="!", intents=intents, chunk_at_startup=True)
         self.admin_id = admin_id
         self.ai = TimewebHandler()
         self.cli = CLIManager(self)
@@ -69,9 +71,26 @@ class WizardBot(commands.Bot):
     async def update_status_task(self):
         """Background task to rotate bot status."""
         await self.wait_until_ready()
+        
+        # Определяем, находимся ли мы в режиме тестирования
+        is_test = os.environ.get('PYTEST_CURRENT_TEST') or 'pytest' in sys.modules
+        
         counter = 0
         while not self.is_closed():
             try:
+                if is_test:
+                    # Статус для тестов: Активен, текст "Находится на калибровке"
+                    await self.change_presence(
+                        status=discord.Status.online,
+                        activity=discord.Activity(
+                            type=discord.ActivityType.custom,
+                            name="custom",
+                            state="Находится на калибровке"
+                        )
+                    )
+                    await asyncio.sleep(30)
+                    continue
+
                 if counter % 2 == 0:
                     count = len(self.guilds)
                     form = pluralize(count, ["сервер", "сервера", "серверов"])

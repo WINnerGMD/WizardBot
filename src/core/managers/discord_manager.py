@@ -45,15 +45,21 @@ class DiscordManager:
     async def _ensure_member_cache(self):
         """Ensures the member cache is up to date."""
         now = time.time()
-        if not self._member_cache or (now - self._last_fetch_time > self._cache_ttl):
-            # Быстрая проверка: если интенты уже подтянули мемберов, берем их
-            if len(self.guild.members) > 1:
+        
+        # Если в guild.members уже есть люди (благодаря chunk_at_startup=True), просто берем их
+        # Это мгновенно и не нагружает сеть
+        if len(self.guild.members) > 1:
+            if not self._member_cache or (now - self._last_fetch_time > self._cache_ttl):
                 self._member_cache = list(self.guild.members)
                 self._last_fetch_time = now
-                return
+            return
 
+        # Если же список пуст, значит чанкинг еще не завершился или выключен
+        if not self._member_cache or (now - self._last_fetch_time > self._cache_ttl):
             try:
-                self._member_cache = [m async for m in self.guild.fetch_members(limit=None)]
+                # Ограничиваем fetch_members, чтобы не вешать бота на гигантских серверах
+                # Лучше иметь неполный кэш, чем получить Unknown Interaction
+                self._member_cache = [m async for m in self.guild.fetch_members(limit=1000)]
                 self._last_fetch_time = now
             except Exception as e:
                 print(f"[WARN] Failed to fetch members: {e}")

@@ -10,7 +10,8 @@ SPEC_LABELS = {
     "user_specialist": "👤 ЮЗЕРЫ",
     "mass_action_specialist": "⚡ МАСС-ОПС",
     "chat_specialist": "💬 ЧАТ",
-    "chief_editor": "✍️ РЕДАКТОР"
+    "chief_editor": "✍️ РЕДАКТОР",
+    "web_researcher": "🌐 ИНТЕРНЕТ"
 }
 
 ICONS = {
@@ -84,9 +85,15 @@ class ClarificationView(discord.ui.View):
         btn = discord.ui.Button(label=label[:80], style=style)
         async def callback(interaction: discord.Interaction):
             if interaction.user.id == self.owner_id:
+                # Мгновенно подтверждаем, чтобы не было Unknown Interaction
+                try: await interaction.response.defer()
+                except: pass
+                
                 self.result = value
                 self.stop()
-                await interaction.response.edit_message(content=f"✅ Выбрано: **{label}**", view=None)
+                try: 
+                    await interaction.edit_original_response(content=f"✅ Выбрано: **{label}**", view=None)
+                except: pass
         btn.callback = callback
         return btn
 
@@ -107,14 +114,20 @@ class ClarificationView(discord.ui.View):
 
     async def _select_callback(self, interaction: discord.Interaction):
         if interaction.user.id == self.owner_id:
+            try: await interaction.response.defer()
+            except: pass
+            
             self.result = interaction.data['values'][0]
             label = self.result
             if interaction.data.get('resolved'):
                 res = interaction.data['resolved']
                 if 'users' in res: label = res['users'][self.result]['username']
                 elif 'roles' in res: label = res['roles'][self.result]['name']
+            
             self.stop()
-            await interaction.response.edit_message(content=f"✅ Выбрано: **{label}**", view=None)
+            try:
+                await interaction.edit_original_response(content=f"✅ Выбрано: **{label}**", view=None)
+            except: pass
 
 class PlanConfirmationView(discord.ui.View):
     def __init__(self, owner_id: int, timeout: int = 300):
@@ -153,21 +166,36 @@ def render_progress_board(board: dict) -> str:
         else:
             roots.append(node)
 
+    # Alternate modes every 6 seconds: 3s basic, 3s detailed
+    current_time = time.time()
+    show_details = int(current_time / 4.0) % 2 == 0
+    
+    mode_text = "[ ПОЛНЫЙ ГРАФ ПАЙПЛАЙНА ]" if show_details else "[ ИЕРАРХИЯ АГЕНТОВ ]"
+
     # 2. Оформление
     lines = [
         "```ansi", 
         "╔══════════════════════════════════════════════════════╗",
-        "║             🔮  W I Z A R D  S T A T U S             ║",
+        f"║             🔮  {mode_text:<25}  ║",
         "╚══════════════════════════════════════════════════════╝"
     ]
     
-    frame = int(time.time() * 5) % len(SPINNER)
+    frame = int(current_time * 5) % len(SPINNER)
     char = SPINNER[frame]
 
     def render_node(node, prefix="", is_last=True):
         status = node['status']
         spec_label = SPEC_LABELS.get(node['spec'], node['spec']) or "TASK"
         
+        parent_spec = None
+        if node.get('pid') and node['pid'] in nodes:
+            parent_spec = nodes[node['pid']]['spec']
+            
+        is_step = parent_spec == node['spec']
+
+        if not show_details and is_step:
+            return # Пропускаем детальные шаги в режиме иерархии
+
         # Красивая иконка
         if status == "running":
             icon = f"\u001b[1;34m{char}\u001b[0m" # Анимированный спиннер
@@ -191,27 +219,52 @@ def render_progress_board(board: dict) -> str:
             text = f"\u001b[1;33m{text}\u001b[0m" # Желтый для ожидания
         elif "Шаг" in text or "⚙️" in text:
             text = f"\u001b[1;37m{text}\u001b[0m" # Белый для шагов
+        elif "web" in node['spec'] or "Ищу" in text:
+            text = f"\u001b[1;34m{text}\u001b[0m"
         
-        # Подсветка имени специалиста (только для корневых или если это другой специалист)
-        if not node.get('pid'):
-            label = f"\u001b[1;35m{spec_label}\u001b[0m" # Фиолетовый для главных
+        if is_step:
+            # Внутренний шаг того же агента - имя не дублируем
+            label = f"\u001b[1;30m{'↳':<15}\u001b[0m"
+        elif not node.get('pid'):
+            # Главный агент
+            label = f"\u001b[1;35m{spec_label:<15}\u001b[0m"
         else:
-            # Для вложенных шагов можно использовать сокращенную метку или серый цвет
-            label = f"\u001b[1;30m{spec_label[:10]}\u001b[0m"
+            # Смена агента (субагент)
+            label_text = (spec_label[:14] + '.') if len(spec_label) > 15 else spec_label
+            label = f"\u001b[1;36m{label_text:<15}\u001b[0m"
 
-        elapsed = int(time.time() - node['tick'])
+        elapsed = int(current_time - node['tick'])
         time_str = f"\u001b[1;30m{elapsed}s\u001b[0m"
         
         # Форматирование строки
         lines.append(f"{line_prefix}{icon} {label:<15} {text:<35} {time_str:>4}")
         
+        # Если мы в простом режиме, можно указать, что есть скрытые дочерние элементы
+        visible_children = [c for c in node['children'] if show_details or c['spec'] != node['spec']]
+        
         # Рекурсия для детей
         new_prefix = prefix + ("    " if is_last else "┃   ")
-        for i, child in enumerate(node['children']):
-            render_node(child, new_prefix, i == len(node['children']) - 1)
+        for i, child in enumerate(visible_children):
+            render_node(child, new_prefix, i == len(visible_children) - 1)
 
     for i, root in enumerate(roots):
         render_node(root, "", i == len(roots) - 1)
     
+    # Защита от лимита Discord (2000 символов)
+    res_len = sum(len(x) + 1 for x in lines) + 4 # +4 for "```\n"
+    if res_len > 1900:
+        header = lines[:4]
+        bottom_lines = []
+        cur_len = sum(len(x) + 1 for x in header) + 25 # +25 for "... (сжато) ...\n```"
+        
+        for line in reversed(lines[4:]):
+            if cur_len + len(line) + 1 > 1900:
+                break
+            bottom_lines.insert(0, line)
+            cur_len += len(line) + 1
+            
+        return "\n".join(header) + "\n   \u001b[1;30m... (сжато) ...\u001b[0m\n" + "\n".join(bottom_lines) + "\n```"
+
     lines.append("```")
     return "\n".join(lines)
+
