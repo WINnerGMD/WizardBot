@@ -81,31 +81,33 @@ class QueryUsersTool(BaseTool):
             return "Никто не найден. Попробуйте поискать по-другому (транслит, часть имени)."
         return [f"{m.display_name} (ID: {m.id}, Name: {m.name})" for m in matches[:20]]
 
-class GetServerStyleTool(BaseTool):
-    name = "get_server_style"
+class GetChannelStyleTool(BaseTool):
+    name = "get_channel_style_sample"
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
         representative_channels = []
-        # Берем по 2 канала из каждой категории, которые видны @everyone
         everyone_role = ctx.guild.default_role
-        for cat in ctx.guild.categories:
-            perms = cat.permissions_for(everyone_role)
+        for ch in ctx.guild.text_channels[:20]:
+            perms = ch.permissions_for(everyone_role)
             if perms.view_channel:
-                for ch in cat.channels[:3]:
-                    representative_channels.append(f"#{ch.name} (in {cat.name})")
+                representative_channels.append(f"#{ch.name}" + (f" (в {ch.category.name})" if ch.category else ""))
+                if len(representative_channels) >= 8: break
         
-        # Если категорий нет или каналов мало, берем просто первые 10 публичных
-        if len(representative_channels) < 5:
-            for ch in ctx.guild.text_channels[:15]:
-                perms = ch.permissions_for(everyone_role)
-                if perms.view_channel and f"#{ch.name}" not in str(representative_channels):
-                    representative_channels.append(f"#{ch.name}")
-
-        style_summary = "\n".join(representative_channels[:20])
+        style_summary = "\n".join(representative_channels)
         return (
-            "АНАЛИЗ СТИЛИСТИКИ СЕРВЕРА:\n"
-            "Используй эти примеры как образец для нейминга (эмодзи, регистр, префиксы):\n"
+            "ПРИМЕРЫ ИМЕНОВАНИЯ КАНАЛОВ:\n"
             f"{style_summary}\n\n"
-            "ЗАПРЕЩЕНО спрашивать у пользователя название, если ты можешь вывести его из стиля или контекста."
+            "Используй этот стиль (регистр, эмодзи) для новых каналов."
+        )
+
+class GetRoleStyleTool(BaseTool):
+    name = "get_role_style_sample"
+    async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
+        roles = [r.name for r in ctx.guild.roles if not r.managed and r.name != "@everyone"]
+        style_summary = "\n".join(roles[:10])
+        return (
+            "ПРИМЕРЫ ИМЕНОВАНИЯ РОЛЕЙ:\n"
+            f"{style_summary}\n\n"
+            "Используй этот стиль для новых ролей."
         )
 
 # Registering tools
@@ -115,4 +117,5 @@ registry.register(ListChannelsTool())
 registry.register(FetchMessageInfoTool())
 registry.register(ReadChannelHistoryTool())
 registry.register(QueryUsersTool())
-registry.register(GetServerStyleTool())
+registry.register(GetChannelStyleTool())
+registry.register(GetRoleStyleTool())

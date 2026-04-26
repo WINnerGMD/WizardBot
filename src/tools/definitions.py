@@ -26,8 +26,13 @@ TOOLS = [
         "parameters": {"type": "OBJECT", "properties": {}}
     },
     {
-        "name": "get_server_style",
-        "description": "Get a random sample of public channel names to deduce the server's naming convention (emojis, case, prefixes). Use this to create channels that match the existing style.",
+        "name": "get_channel_style_sample",
+        "description": "Get a random sample of public channel names to deduce naming convention (emojis, case). Use this before creating channels.",
+        "parameters": {"type": "OBJECT", "properties": {}}
+    },
+    {
+        "name": "get_role_style_sample",
+        "description": "Get a sample of existing roles to match their naming style (colors, prefixes). Use this before creating roles.",
         "parameters": {"type": "OBJECT", "properties": {}}
     },
     {

@@ -8,19 +8,20 @@ SPECIALISTS = {
             "STRICT OPERATIONAL MODE: YOU ARE A FUNCTION-CALLING ENGINE ONLY.\n"
             "1. NEVER OUTPUT TEXT, EXPLANATIONS, LOGS, OR PROTOCOLS IN CHAT.\n"
             "2. YOUR ONLY ALLOWED OUTPUT IS A TOOL CALL (delegate_to_sub_agent or create_pipeline).\n"
-            "3. IF YOU OUTPUT A MESSAGE LIKE 'Execution Protocol' AS TEXT, IT IS A SYSTEM FAILURE.\n"
-            "4. ALWAYS call 'get_server_style' at the start to gather context.\n"
-            "5. NO CHAT. NO INTROS. NO 'РЕЗУЛЬТАТ'."
+            "3. DO NOT gather context like server style yourself. Delegate immediately.\n"
+            "4. IF A CHANNEL NEEDS TO BE CREATED, DELEGATE TO 'infra_architect'.\n"
+            "5. IF ROLES/USERS NEEDED, DELEGATE TO 'user_specialist'.\n"
+            "FAILURE TO CALL A TOOL IS A SYSTEM CRASH. NO CHAT. NO INTROS. NO 'РЕЗУЛЬТАТ'."
         ),
         "model": "deepseek-v3",
-        "tools": ["delegate_to_sub_agent", "create_pipeline", "ask_user_clarification", "get_server_style"]
+        "tools": ["delegate_to_sub_agent", "create_pipeline", "ask_user_clarification"]
     },
 
     "user_specialist": {
         "name": "USER_MANAGER",
-        "instruction": "MANAGE USERS AND ROLES. Use tools to create/modify roles. Check style via get_server_style. Use 'out' in pipelines to share user IDs.",
+        "instruction": "MANAGE USERS AND ROLES. Use tools to create/modify roles. Check role style via get_role_style_sample ONLY IF required to match server conventions. Use 'out' in pipelines to share user IDs.",
         "model": "deepseek-v3",
-        "tools": ["list_roles", "query_users", "assign_role_to_user", "remove_role_from_user", "remove_all_roles_from_user", "create_role", "edit_role", "delete_role", "ask_user_clarification", "create_pipeline", "get_server_style"]
+        "tools": ["list_roles", "query_users", "assign_role_to_user", "remove_role_from_user", "remove_all_roles_from_user", "create_role", "edit_role", "delete_role", "ask_user_clarification", "create_pipeline", "get_role_style_sample"]
     },
 
     "infra_architect": {
@@ -28,12 +29,12 @@ SPECIALISTS = {
         "instruction": (
             "MANAGE DISCORD INFRASTRUCTURE.\n"
             "1. USE 'create_pipeline' FOR MULTI-STEP TASKS.\n"
-            "2. ALWAYS ANALYZE SERVER STYLE (get_server_style) AND CATEGORIES (list_channels).\n"
+            "2. ANALYZE CHANNEL STYLE (get_channel_style_sample) ONLY IF the task requires matching server conventions."
             "3. MATCH NAMING CONVENTIONS AND PLACE CHANNELS IN LOGICAL CATEGORIES.\n"
             "AUTONOMY IS MANDATORY. NO QUESTIONS."
         ),
         "model": "deepseek-v3",
-        "tools": ["list_channels", "list_roles", "create_category", "create_text_channel", "create_voice_channel", "create_forum_channel", "delete_channel", "delete_all_channels", "set_channel_permissions", "edit_channel", "ask_user_clarification", "create_pipeline", "get_server_style"]
+        "tools": ["list_channels", "list_roles", "create_category", "create_text_channel", "create_voice_channel", "create_forum_channel", "delete_channel", "delete_all_channels", "set_channel_permissions", "edit_channel", "ask_user_clarification", "create_pipeline", "get_channel_style_sample"]
     },
 
     "mass_action_specialist": {
