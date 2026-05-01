@@ -63,7 +63,7 @@ def build_role_permissions(perm_list: List[str]) -> discord.Permissions:
             kwargs[attr] = True
     return discord.Permissions(**kwargs)
 
-def build_overwrites(guild: discord.Guild, perm_list: List[Dict[str, Any]]) -> Dict[Union[discord.Role, discord.Member], discord.PermissionOverwrite]:
+async def build_overwrites(guild: discord.Guild, perm_list: List[Dict[str, Any]]) -> Dict[Union[discord.Role, discord.Member], discord.PermissionOverwrite]:
     """Build a dict of {Target: PermissionOverwrite}."""
     if not perm_list:
         return {}
@@ -71,7 +71,7 @@ def build_overwrites(guild: discord.Guild, perm_list: List[Dict[str, Any]]) -> D
     for entry in perm_list:
         if not isinstance(entry, dict):
             continue
-        target = resolve_role(guild, entry.get("target", ""))
+        target = await resolve_role(guild, entry.get("target", ""))
         if not target:
             continue
         allow_perms = {}
@@ -110,18 +110,50 @@ def normalize_string(text: str) -> str:
     if not text: return ""
     return str(text).lower().translate(_normalize_trans)
 
-def resolve_role(guild: discord.Guild, target_str: str) -> Optional[discord.Role]:
-    """Resolve 'everyone', role name, or role ID to a discord.Role."""
+async def resolve_role(guild: discord.Guild, target_str: str) -> Optional[discord.Role]:
+    """Resolve 'everyone', role name, or role ID to a discord.Role (with fetch fallback)."""
     if not target_str:
         return None
     target_str = str(target_str).strip()
     if target_str.lower() in ("everyone", "@everyone"):
         return guild.default_role
+    
+    # 1. ID Check (Instant)
     if target_str.isdigit():
         role = guild.get_role(int(target_str))
-        if role:
-            return role
-    return discord.utils.get(guild.roles, name=target_str)
+        if role: return role
+
+    # 2. Cache Name Check
+    role = discord.utils.get(guild.roles, name=target_str)
+    if role: return role
+
+    # 3. API Fetch Fallback
+    try:
+        roles = await guild.fetch_roles()
+        return discord.utils.get(roles, name=target_str)
+    except:
+        return None
+async def resolve_channel(guild: discord.Guild, target_str: str) -> Optional[Union[discord.TextChannel, discord.VoiceChannel, discord.CategoryChannel, discord.ForumChannel]]:
+    """Resolve channel name or ID to a channel object (with fetch fallback)."""
+    if not target_str:
+        return None
+    target_str = str(target_str).strip()
+    
+    # 1. ID Check
+    if target_str.isdigit():
+        ch = guild.get_channel(int(target_str))
+        if ch: return ch
+
+    # 2. Cache Name Check
+    ch = discord.utils.get(guild.channels, name=target_str)
+    if ch: return ch
+
+    # 3. API Fetch Fallback
+    try:
+        channels = await guild.fetch_channels()
+        return discord.utils.get(channels, name=target_str)
+    except:
+        return None
 
 async def resolve_member(guild: discord.Guild, member_str: str, cache: List[discord.Member] = None) -> Tuple[Optional[discord.Member], List[discord.Member]]:
     """Ultra Search Logic: Optimized Double API Query (Translit), Fuzzy (returns single_member, list_of_matches)"""

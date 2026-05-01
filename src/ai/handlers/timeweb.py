@@ -14,8 +14,8 @@ class TimewebHandler:
     
     def __init__(self):
         self.api_key = os.getenv("TIMEWEB_API_KEY")
-        self.base_url = os.getenv("TIMEWEB_BASE_URL")
-        self.model = "deepseek-v3"
+        self.base_url = os.getenv("TIMEWEB_BASE_URL", "https://api.timeweb.ai/v1")
+        self.model = "deepseek/deepseek-v4-flash"
         
         self.client = AsyncOpenAI(
             api_key=self.api_key,
@@ -61,7 +61,21 @@ class TimewebHandler:
     def _usage_suffix(self, usage_context: Dict[str, int]) -> str:
         if not self.show_usage or not usage_context:
             return ""
-        return f"\n\n`📊 {usage_context.get('total', 0)} tokens`"
+        
+        total = usage_context.get("total", 0)
+        p = usage_context.get("prompt", 0)
+        c = usage_context.get("completion", 0)
+        r = usage_context.get("reasoning", 0)
+        
+        parts = [f"📊 {total} tokens"]
+        if p or c:
+            breakdown = f"({p}↑ / {c}↓"
+            if r:
+                breakdown += f" / {r}🧠"
+            breakdown += ")"
+            parts.append(breakdown)
+            
+        return f"\n\n`{' '.join(parts)}`"
 
     def _get_global_enforcement(self) -> str:
         return (
@@ -93,11 +107,14 @@ class TimewebHandler:
             return {"content": "Error: Recursion depth exceeded.", "reports": [], "stop_reason": "depth"}
 
         node_id = forced_node_id or str(uuid.uuid4())
-        usage_context = usage_context if usage_context is not None else {"total": 0}
+        usage_context = usage_context if usage_context is not None else {"total": 0, "prompt": 0, "completion": 0, "reasoning": 0}
         
         specialist_name = specialist_name or "orchestrator"
         spec = SPECIALISTS.get(specialist_name, SPECIALISTS["orchestrator"])
         tools = self._tools_for_specialist(specialist_name, user_perms=user_perms)
+
+        # Use model from specialist config if available, otherwise fallback to handler default
+        model_to_use = spec.get("model", self.model)
 
         system_content = f"{system_suffix}\n{self._get_global_enforcement()}\nSPECIALIST ROLE: {spec['instruction']}"
         messages = [{"role": "system", "content": system_content}]
@@ -121,7 +138,7 @@ class TimewebHandler:
 
                 try:
                     response = await self.client.chat.completions.create(
-                        model=spec.get("model", self.model),
+                        model=model_to_use,
                         messages=messages,
                         tools=tools if tools else None,
                         tool_choice="auto" if tools else None,
@@ -135,6 +152,14 @@ class TimewebHandler:
 
                 if response.usage:
                     usage_context["total"] += response.usage.total_tokens
+                    usage_context["prompt"] = usage_context.get("prompt", 0) + response.usage.prompt_tokens
+                    usage_context["completion"] = usage_context.get("completion", 0) + response.usage.completion_tokens
+                    
+                    # Handle reasoning tokens if available
+                    if hasattr(response.usage, "completion_tokens_details") and response.usage.completion_tokens_details:
+                        r_tokens = getattr(response.usage.completion_tokens_details, "reasoning_tokens", 0)
+                        if r_tokens:
+                            usage_context["reasoning"] = usage_context.get("reasoning", 0) + r_tokens
 
                 if not getattr(msg, "tool_calls", None):
                     # Protection against orchestrator hallucinating text instead of tools
@@ -153,12 +178,20 @@ class TimewebHandler:
                 tc_results = []
                 for tc in msg.tool_calls:
                     name, args_raw = tc.function.name, tc.function.arguments or "{}"
-                    try: args = json.loads(args_raw)
-                    except: args = {}
+                    try:
+                        clean_args = args_raw.strip()
+                        if clean_args.startswith('```json'):
+                            clean_args = clean_args.removeprefix('```json').removesuffix('```').strip()
+                        elif clean_args.startswith('```'):
+                            clean_args = clean_args.removeprefix('```').removesuffix('```').strip()
+                        args = json.loads(clean_args)
+                    except Exception as e:
+                        print(f"[TOOL PARSE ERROR] Failed to parse args for {name}: {args_raw} (Error: {e})")
+                        args = {}
 
                     res = await self._execute_tool_logic(
                         name, args, manager, status_callback, usage_context, 
-                        node_id, depth, user_perms, mode, specialist_name
+                        node_id, depth, user_perms, mode, specialist_name, system_suffix
                     )
                     tc_results.append((tc.id, name, res))
 
@@ -174,11 +207,7 @@ class TimewebHandler:
                         reports.append(f"[{t_name}]: {res_content}")
 
                     messages.append({"role": "tool", "tool_call_id": t_id, "name": t_name, "content": res_content})
-                    
-                    # Bypass logic
-                    if isinstance(res, dict) and res.get("is_delegation") and res.get("success"):
-                        await update_status("Успешно выполнено", status="done")
-                        return {"content": res_content, "reports": reports, "stop_reason": None}
+                    # Remove bypass logic to allow agents to process the results of their delegation in subsequent turns and complete complex tasks.
 
             return {"content": (getattr(last_msg, "content", None) or "").strip() or "Завершено.", "reports": reports, "stop_reason": None}
         finally:
@@ -195,10 +224,19 @@ class TimewebHandler:
         depth: int, 
         user_perms: Optional[str], 
         mode: str,
-        specialist_name: str
+        specialist_name: str,
+        system_suffix: str = ""
     ) -> Any:
         """Unified logic to execute tools, including virtual tools like delegation."""
         
+        # 0. Strict Tool Access Control (Prevent Hallucinations)
+        spec = SPECIALISTS.get(specialist_name, {})
+        allowed = spec.get("tools", [])
+        if name != "delegate_to_sub_agent" and name != "create_pipeline" and name not in allowed:
+            error_msg = f"⛔ ОШИБКА ДОСТУПА: Инструмент '{name}' недоступен для роли '{specialist_name}'. Доступные инструменты: {', '.join(allowed) or 'нет инструментов'}. Пожалуйста, используйте 'delegate_to_sub_agent' для обращения к соответствующему специалисту."
+            print(f"   [SYSTEM-GUARD] {error_msg}")
+            return error_msg
+
         async def update_status(text: str, status: str = "running"):
             if status_callback:
                 try: await status_callback(specialist_name, text, node_id, None, status=status)
@@ -213,7 +251,7 @@ class TimewebHandler:
             
             await update_status(f"🔀 Делегирую → {sub_name}")
             sub_runs = await asyncio.gather(*[
-                self._run_agent(sub_name, st, manager, status_callback, usage_context=usage_context, parent_id=node_id, depth=depth+1, user_perms=user_perms, mode=mode)
+                self._run_agent(sub_name, st, manager, status_callback, usage_context=usage_context, parent_id=node_id, depth=depth+1, user_perms=user_perms, mode=mode, system_suffix=system_suffix)
                 for st in sub_tasks
             ])
             
@@ -280,7 +318,7 @@ class TimewebHandler:
                     await status_callback(specialist_name, f"⚙️ Шаг {i+1}: {t_name}", step_id, node_id, status="running")
                 
                 try:
-                    res = await self._execute_tool_logic(t_name, t_args, manager, status_callback, usage_context, step_id, depth+1, user_perms, mode, specialist_name)
+                    res = await self._execute_tool_logic(t_name, t_args, manager, status_callback, usage_context, step_id, depth+1, user_perms, mode, specialist_name, system_suffix)
                 except Exception as e:
                     res = f"Ошибка: {e}"
 
@@ -290,7 +328,8 @@ class TimewebHandler:
                 # ID extraction
                 extracted_id = None
                 if isinstance(res_str, str):
-                    m = re.search(r'ID: (\d+)', res_str)
+                    # Try to find ID in (ID: 123) or ID: 123 format
+                    m = re.search(r'(?:\(ID:\s*|ID:\s*)(\d+)\)?', res_str)
                     if m: extracted_id = m.group(1)
                 
                 if extracted_id:
@@ -299,10 +338,10 @@ class TimewebHandler:
                 
                 p_reports.append(f"Шаг {i+1} ({t_name}): {res_str}")
                 if status_callback:
-                    st = "done" if "Ошибка" not in str(res_str) and "⛔" not in str(res_str) else "error"
+                    st = "done" if "Ошибка:" not in str(res_str) and "⛔" not in str(res_str) else "error"
                     await status_callback(specialist_name, f"✅ Шаг {i+1} завершен", step_id, node_id, status=st)
 
-                if "Ошибка" in str(res_str) or "⛔" in str(res_str):
+                if "Ошибка:" in str(res_str) or "⛔" in str(res_str):
                     p_reports.append(f"⚠️ КРИТИЧЕСКИЙ СБОЙ на шаге {i+1}")
                     success = False; break
             
@@ -313,19 +352,20 @@ class TimewebHandler:
 
     async def processed_prompt(self, prompt: str, manager: Any, status_callback: Optional[Callable] = None, usage_context: Optional[Dict[str, int]] = None, user_perms: Optional[str] = None, mode: str = "prompt") -> str:
         from src.core.managers.billing_manager import billing_manager
-        usage_context = usage_context if usage_context is not None else {"total": 0}
+        usage_context = usage_context if usage_context is not None else {"total": 0, "prompt": 0, "completion": 0, "reasoning": 0}
 
         p_lower = prompt.lower().strip()
         if p_lower in ["ку", "привет", "хай", "hello", "hi"]:
             return "👋 Привет! Я WizardBot. Чем могу помочь?"
         
         guild = manager.guild
-        server_insight = f"\n[SERVER CONTEXT]: Server: '{guild.name}', Channel: '{manager.interaction.channel.name if (manager.interaction and manager.interaction.channel) else 'unknown'}', Members: {guild.member_count}"
+        server_insight = f"\n[SERVER CONTEXT]: Server: '{guild.name}' (ID: {getattr(guild, 'id', 'unknown')}), Channel: '{(manager.interaction.channel.name if (manager.interaction and manager.interaction.channel) else 'unknown')}' (ID: {getattr(manager.interaction.channel, 'id', 'unknown') if (manager.interaction and manager.interaction.channel) else 'unknown'}), Members: {guild.member_count}"
         user_id = manager.interaction.user.id if manager.interaction else 0
+        user_name = manager.interaction.user.name if manager.interaction else "unknown"
         
         is_owner = guild.owner_id == user_id
         user_status = "\n[CALLER STATUS]: SERVER OWNER (GOD MODE)" if is_owner else "\n[CALLER STATUS]: REGULAR MEMBER"
-        perms_info = f"{user_status}\n[CALLER DISCORD PERMISSIONS]: {user_perms or 'None'}{server_insight}"
+        perms_info = f"[CALLER INFO]: Name: '{user_name}', ID: {user_id}\n{user_status}\n[CALLER DISCORD PERMISSIONS]: {user_perms or 'None'}{server_insight}"
 
         await billing_manager.save_message(user_id, "user", prompt)
 
@@ -353,14 +393,21 @@ class TimewebHandler:
                         {"role": "user", "content": f"Запрос:\n{prompt}\n\Отчеты:\n{chr(10).join(reports)}\n\nЧерновик:\n{content}"}
                     ],
                 )
-                if editor_res.usage: usage_context["total"] += editor_res.usage.total_tokens
+                if editor_res.usage:
+                    usage_context["total"] += editor_res.usage.total_tokens
+                    usage_context["prompt"] = usage_context.get("prompt", 0) + editor_res.usage.prompt_tokens
+                    usage_context["completion"] = usage_context.get("completion", 0) + editor_res.usage.completion_tokens
+                    if hasattr(editor_res.usage, "completion_tokens_details") and editor_res.usage.completion_tokens_details:
+                        r_tokens = getattr(editor_res.usage.completion_tokens_details, "reasoning_tokens", 0)
+                        if r_tokens:
+                            usage_context["reasoning"] = usage_context.get("reasoning", 0) + r_tokens
                 content = (editor_res.choices[0].message.content or "").strip()
             except: pass
 
         return content + self._usage_suffix(usage_context)
 
     async def process_with_plan(self, prompt: str, manager: Any, progress_callback: Callable, status_callback: Optional[Callable] = None, mode: str = "plan") -> str:
-        usage = {"total": 0}
+        usage = {"total": 0, "prompt": 0, "completion": 0, "reasoning": 0}
         run = await self._run_agent("orchestrator", prompt, manager, status_callback, max_turns=4, usage_context=usage, mode=mode)
         
         try:
@@ -371,7 +418,14 @@ class TimewebHandler:
                     {"role": "user", "content": prompt}
                 ],
             )
-            if plan_res.usage: usage["total"] += plan_res.usage.total_tokens
+            if plan_res.usage:
+                usage["total"] += plan_res.usage.total_tokens
+                usage["prompt"] = usage.get("prompt", 0) + plan_res.usage.prompt_tokens
+                usage["completion"] = usage.get("completion", 0) + plan_res.usage.completion_tokens
+                if hasattr(plan_res.usage, "completion_tokens_details") and plan_res.usage.completion_tokens_details:
+                    r_tokens = getattr(plan_res.usage.completion_tokens_details, "reasoning_tokens", 0)
+                    if r_tokens:
+                        usage["reasoning"] = usage.get("reasoning", 0) + r_tokens
             plan_text = (plan_res.choices[0].message.content or "").strip()
         except: plan_text = "1. Выполнить задачу"
 

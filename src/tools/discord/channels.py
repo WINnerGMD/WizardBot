@@ -2,7 +2,7 @@ import discord
 from typing import Any, Dict
 from src.tools.base import BaseTool, ToolContext, registry
 from src.core.utils.discord_utils import (
-    build_overwrites, check_perms
+    build_overwrites, check_perms, resolve_role, resolve_channel
 )
 
 class CreateCategoryTool(BaseTool):
@@ -12,7 +12,7 @@ class CreateCategoryTool(BaseTool):
             return "⛔ ОШИБКА: У вас нет прав на управление каналами в Discord."
         name = args.get('name')
         if not name: return "⛔ ОШИБКА: Не указано имя категории."
-        overwrites = build_overwrites(ctx.guild, args.get('permissions'))
+        overwrites = await build_overwrites(ctx.guild, args.get('permissions'))
         cat = await ctx.guild.create_category(name, overwrites=overwrites or None)
         return f"Категория '{name}' (ID: {cat.id}) создана."
 
@@ -24,8 +24,8 @@ class CreateTextChannelTool(BaseTool):
         name = args.get('name')
         if not name: return "⛔ ОШИБКА: Не указано имя канала."
         cat_ref = args.get('category_name', '')
-        cat = ctx.guild.get_channel(int(cat_ref)) if str(cat_ref).isdigit() else discord.utils.get(ctx.guild.categories, name=cat_ref)
-        overwrites = build_overwrites(ctx.guild, args.get('permissions'))
+        cat = await resolve_channel(ctx.guild, cat_ref)
+        overwrites = await build_overwrites(ctx.guild, args.get('permissions'))
         raw_nsfw = args.get('nsfw', False)
         nsfw = str(raw_nsfw).lower() == 'true' if isinstance(raw_nsfw, str) else bool(raw_nsfw)
         ch = await ctx.guild.create_text_channel(name, category=cat, overwrites=overwrites or None, nsfw=nsfw)
@@ -39,8 +39,8 @@ class CreateVoiceChannelTool(BaseTool):
         name = args.get('name')
         if not name: return "⛔ ОШИБКА: Не указано имя канала."
         cat_ref = args.get('category_name', '')
-        cat = ctx.guild.get_channel(int(cat_ref)) if str(cat_ref).isdigit() else discord.utils.get(ctx.guild.categories, name=cat_ref)
-        overwrites = build_overwrites(ctx.guild, args.get('permissions'))
+        cat = await resolve_channel(ctx.guild, cat_ref)
+        overwrites = await build_overwrites(ctx.guild, args.get('permissions'))
         ch = await ctx.guild.create_voice_channel(name, category=cat, overwrites=overwrites or None)
         return f"Голосовой канал '{name}' (ID: {ch.id}) создан."
 
@@ -50,7 +50,7 @@ class EditChannelTool(BaseTool):
         if not check_perms(ctx.user, manage_channels=True):
             return "⛔ ОШИБКА: У вас нет прав на управление каналами в Discord."
         old, new = args.get('old_name'), args.get('new_name')
-        ch = ctx.guild.get_channel(int(old)) if str(old).isdigit() else discord.utils.get(ctx.guild.channels, name=old)
+        ch = await resolve_channel(ctx.guild, old)
         if ch: 
             await ch.edit(name=new)
             return f"Канал успешно переименован в '{new}'."
@@ -64,8 +64,8 @@ class CreateForumChannelTool(BaseTool):
         name = args.get('name')
         if not name: return "⛔ ОШИБКА: Не указано имя форума."
         cat_ref = args.get('category_name', '')
-        cat = ctx.guild.get_channel(int(cat_ref)) if str(cat_ref).isdigit() else discord.utils.get(ctx.guild.categories, name=cat_ref)
-        overwrites = build_overwrites(ctx.guild, args.get('permissions'))
+        cat = await resolve_channel(ctx.guild, cat_ref)
+        overwrites = await build_overwrites(ctx.guild, args.get('permissions'))
         tags = [discord.ForumTag(name=t) for t in (args.get('tags') or [])]
         topic = args.get('topic', '') or args.get('Topic', '')
         forum = await ctx.guild.create_forum(
@@ -83,7 +83,7 @@ class DeleteChannelTool(BaseTool):
         if not check_perms(ctx.user, manage_channels=True):
             return "⛔ ОШИБКА: У вас нет прав на удаление каналов."
         ch_ref = args.get('name')
-        ch = ctx.guild.get_channel(int(ch_ref)) if str(ch_ref).isdigit() else discord.utils.get(ctx.guild.channels, name=ch_ref)
+        ch = await resolve_channel(ctx.guild, ch_ref)
         if ch: 
             await ch.delete()
             return f"Канал {ch_ref} удален."
@@ -108,7 +108,7 @@ class DeleteAllChannelsTool(BaseTool):
         target_desc = ""
 
         if cat_ref:
-            cat = ctx.guild.get_channel(int(cat_ref)) if str(cat_ref).isdigit() else discord.utils.get(ctx.guild.categories, name=cat_ref)
+            cat = await resolve_channel(ctx.guild, cat_ref)
             if not cat: return f"Категория '{cat_ref}' не найдена."
             to_delete = list(cat.channels)
             target_desc = f"в категории '{cat.name}'"
@@ -149,13 +149,13 @@ class SetChannelPermissionsTool(BaseTool):
         if not check_perms(ctx.user, manage_roles=True):
             return "⛔ ОШИБКА: У вас нет прав на управление правами каналов."
         target = args.get('channel_id', '')
-        ch = ctx.guild.get_channel(int(target)) if str(target).isdigit() else discord.utils.get(ctx.guild.channels, name=target)
+        ch = await resolve_channel(ctx.guild, target)
         if not ch: return "Канал не найден."
         
         from src.core.utils.discord_utils import PERM_MAP, resolve_role
         
         for entry in args.get('permissions', []):
-            role = resolve_role(ctx.guild, entry.get('target', ''))
+            role = await resolve_role(ctx.guild, entry.get('target', ''))
             if not role: continue
             overwrite = ch.overwrites_for(role)
             for p in (entry.get('allow') or []):
@@ -179,13 +179,13 @@ class MoveChannelTool(BaseTool):
         if not check_perms(ctx.user, manage_channels=True):
             return "⛔ ОШИБКА: У вас нет прав на перемещение каналов."
         ch_id = args.get('channel_id')
-        ch = ctx.guild.get_channel(int(ch_id)) if str(ch_id).isdigit() else discord.utils.get(ctx.guild.channels, name=ch_id)
+        ch = await resolve_channel(ctx.guild, ch_id)
         if not ch: return "Канал не найден."
         
         edit_kwargs = {}
         if 'category_id' in args:
             cat_id = args['category_id']
-            cat = ctx.guild.get_channel(int(cat_id)) if str(cat_id).isdigit() else discord.utils.get(ctx.guild.categories, name=cat_id)
+            cat = await resolve_channel(ctx.guild, cat_id)
             if cat: edit_kwargs['category'] = cat
         
         if 'position' in args:

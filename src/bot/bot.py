@@ -21,6 +21,7 @@ class WizardBot(commands.Bot):
         self.ai = TimewebHandler()
         self.cli = CLIManager(self)
         self.discord_cli_sessions: Dict[int, Any] = {}
+        self.calibration_mode = False
 
     async def setup_hook(self):
         """Initialization hook before starting the bot."""
@@ -61,8 +62,13 @@ class WizardBot(commands.Bot):
         for guild in self.guilds:
             print(f"   • Server: {guild.name} (ID: {guild.id})")
             print(f"   • Members visible: {len(guild.members)}")
+            print(f"   • Roles visible: {len(guild.roles)}")
+            print(f"   • Channels visible: {len(guild.channels)}")
+            
             if len(guild.members) <= 1:
                 print("   ⚠️ WARNING: Bot sees only itself! Check 'SERVER MEMBERS INTENT' in Developer Portal.")
+            if len(guild.roles) <= 1:
+                print("   ⚠️ WARNING: Bot sees only @everyone! Check 'GUILD_ROLES' intent.")
         # --------------------------
         
         self.loop.create_task(self.update_status_task())
@@ -78,17 +84,21 @@ class WizardBot(commands.Bot):
         counter = 0
         while not self.is_closed():
             try:
-                if is_test:
-                    # Статус для тестов: Активен, текст "Находится на калибровке"
+                # Режим калибровки: через атрибут или через файл-флаг
+                is_file_calibration = os.path.exists('.calibration')
+                is_calibration = self.calibration_mode or is_file_calibration or is_test
+                
+                if is_calibration:
+                    # Статус: DND, текст: "Калибровка"
                     await self.change_presence(
-                        status=discord.Status.online,
+                        status=discord.Status.dnd,
                         activity=discord.Activity(
                             type=discord.ActivityType.custom,
                             name="custom",
-                            state="Находится на калибровке"
+                            state="Калибровка"
                         )
                     )
-                    await asyncio.sleep(30)
+                    await asyncio.sleep(10) # Чаще проверяем файл
                     continue
 
                 if counter % 2 == 0:
@@ -112,6 +122,16 @@ class WizardBot(commands.Bot):
     async def on_message(self, message: discord.Message):
         if message.author.bot: return
         
+        # Режим калибровки: игнорируем всех, кроме админа
+        is_calib = self.calibration_mode or os.path.exists('.calibration')
+        if is_calib and message.author.id != self.admin_id:
+            # Отвечаем только если это команда или DM
+            if message.content.startswith('!') or isinstance(message.channel, discord.DMChannel):
+                try:
+                    await message.channel.send("🤖 **Бот находится на калибровке.**\nВ данный момент функции ИИ ограничены. Пожалуйста, подождите завершения процесса.", delete_after=10)
+                except: pass
+            return
+
         # CLI integration
         if self.cli and getattr(self.cli, "session", None):
             await self.cli.session.chat_msg_received(message)

@@ -61,6 +61,8 @@ class CLISession:
                 await self._cmd_keys()
             elif cmd == "addkey":
                 await self._cmd_addkey(args)
+            elif cmd == "connect":
+                await self._cmd_specialist(args)
             elif cmd == "unfreeze":
                 await self._cmd_unfreeze()
             elif cmd == "guild":
@@ -77,7 +79,7 @@ class CLISession:
                 await self.output_callback(self.f(f"📜 \033[1;36mЛоги {state}\033[0m", f"📜 **Логи {state}**"))
             elif cmd == "chatting":
                 await self._cmd_chatting(args)
-            elif cmd == "specialist":
+            elif cmd in ["specialist", "connect"]:
                 await self._cmd_specialist(args)
             elif cmd in ["exit", "quit", "stop"]:
                 if self.is_discord:
@@ -148,7 +150,7 @@ class CLISession:
             ("broadcast <t>", "Объявление на все серверы"),
             ("logs", "Включить/выключить логи в реальном времени"),
             ("chatting <cid>", "Войти в режим чата с каналом/юзером"),
-            ("specialist <n>", "Войти в режим прямого управления субагентом"),
+            ("connect [name]", "Войти в режим управления субагентом (без аргументов — список)"),
             ("exit/quit", "Завершить работу/сессию")
         ]
         for cmd, d in cmds:
@@ -331,65 +333,104 @@ class CLISession:
         except ValueError:
             await self.output_callback("❌ Неверный формат ID. Должны быть цифры.")
     async def _cmd_specialist(self, args):
+        from src.ai.specialists import SPECIALISTS
         if not args:
-            await self.output_callback("❌ Укажите имя специалиста: infra_architect, user_specialist, chat_specialist, mass_action_specialist")
+            msg = [self.f("\n\033[1;36m--- ДОСТУПНЫЕ СПЕЦИАЛИСТЫ ---\033[0m", "```\n--- ДОСТУПНЫЕ СПЕЦИАЛИСТЫ ---")]
+            for name, spec in SPECIALISTS.items():
+                msg.append(self.f(f" • \033[1;33m{name.ljust(25)}\033[0m | {spec.get('name')}", f" • {name.ljust(25)} | {spec.get('name')}"))
+            msg.append(self.f("\n\033[1;30mИспользуйте: connect <имя>\033[0m", "\nИспользуйте: /connect <имя>"))
+            msg.append(self.f("\033[1;36m------------------------------\033[0m\n", "```"))
+            await self.output_callback("\n".join(msg))
             return
         
         spec_name = args[0]
-        from src.ai.specialists import SPECIALISTS
         if spec_name not in SPECIALISTS:
-            await self.output_callback(f"❌ Специалист '{spec_name}' не найден.")
+            await self.output_callback(f"❌ Специалист '{spec_name}' не найден. Введите 'connect' для списка.")
             return
-            
+        
         self.mode = "specialist"
         self.specialist_name = spec_name
+        name_up = spec_name.upper()
         await self.output_callback(self.f(
-            f"🛠️ \033[1;32mВход в режим управления: {spec_name.upper()}\033[0m\nКоманды: \033[1;37mtools, call <name> <json>, <текст для ИИ>\033[0m\n(Введите /exit для выхода)",
-            f"🛠️ **Вход в режим управления: {spec_name.upper()}**\nКоманды: `tools`, `call <name> <json>`, `<текст для ИИ>`\n*(Введите /exit для выхода)*"
+            f"🛠️ \033[1;32mВход в режим управления: {name_up}\033[0m\nКоманды: \033[1;37m/tools, /info, /call <name> <json>, <текст для ИИ>\033[0m\n(Введите /exit для выхода)",
+            f"🛠️ **Вход в режим управления: {name_up}**\nКоманды: `/tools`, `/info`, `/call <name> <json>`, `<текст для ИИ>`\n*(Введите /exit для выхода)*"
         ))
 
     async def _handle_specialist_input(self, line: str):
+        line = line.strip()
         parts = line.split(maxsplit=2)
         cmd = parts[0].lower()
         
-        if cmd == "tools":
+        # Support both 'tools' and '/tools'
+        if cmd in ["tools", "/tools"]:
             from src.ai.specialists import SPECIALISTS
             tools = SPECIALISTS[self.specialist_name].get("tools", [])
-            msg = [f"📋 Доступные инструменты для {self.specialist_name}:"]
+            if not tools:
+                await self.output_callback(f"ℹ️ У специалиста {self.specialist_name} нет инструментов.")
+                return
+            msg = [self.f(f"📋 \033[1;36mДоступные инструменты для {self.specialist_name}:\033[0m", f"📋 **Доступные инструменты для {self.specialist_name}:**")]
             for t in tools: msg.append(f"  - {t}")
             await self.output_callback("\n".join(msg))
+            return
+
+        if cmd == "/info":
+            from src.ai.specialists import SPECIALISTS
+            spec = SPECIALISTS[self.specialist_name]
+            msg = [
+                self.f(f"🛠️ \033[1;32mИНФО: {self.specialist_name.upper()}\033[0m", f"🛠️ **ИНФО: {self.specialist_name.upper()}**"),
+                f"📝 Инструкция: {spec['instruction'][:200]}...",
+                f"🧠 Модель: {spec.get('model', 'default')}"
+            ]
+            await self.output_callback("\n".join(msg))
+            return
             
-        elif cmd == "call":
+        if cmd in ["call", "/call"]:
             if len(parts) < 2:
-                await self.output_callback("❌ Ошибка: call <имя_инструмента> <опциональный_json>")
+                await self.output_callback("❌ Ошибка: /call <имя_инструмента> <опциональный_json>")
                 return
             t_name = parts[1]
             t_args_raw = parts[2] if len(parts) > 2 else "{}"
             try:
                 import json
                 t_args = json.loads(t_args_raw)
-                await self.output_callback(f"⚙️ Прямой вызов {t_name}...")
+                await self.output_callback(self.f(f"⚙️ \033[1;30mПрямой вызов {t_name}...\033[0m", f"⚙️ *Прямой вызов {t_name}...*"))
                 
                 from src.core.managers.discord_manager import DiscordManager
-                # Пытаемся найти активный сервер для контекста, если есть
                 guild = self.bot.guilds[0] if self.bot.guilds else None
+                if not guild:
+                    await self.output_callback("❌ Ошибка: Бот не подключен ни к одному серверу.")
+                    return
                 manager = DiscordManager(guild, bot=self.bot)
                 
                 res = await manager.execute_tool(t_name, t_args)
-                await self.output_callback(f"✅ Результат: {res} (0 tokens used)")
+                await self.output_callback(self.f(f"✅ \033[1;32mРезультат:\033[0m {res}", f"✅ **Результат:** {res}"))
             except Exception as e:
                 await self.output_callback(f"❌ Ошибка вызова: {e}")
+            return
                 
-        else:
-            # AI Inference Mode
-            await self.output_callback(f"🧠 {self.specialist_name} думает... (AI Mode)")
-            from src.ai.handlers.timeweb import TimewebHandler
-            from src.core.discord_manager import DiscordManager
-            
-            handler = TimewebHandler()
-            guild = self.bot.guilds[0] if self.bot.guilds else None
-            manager = DiscordManager(guild, bot=self.bot)
-            
-            usage = {"total": 0}
-            res = await handler._run_agent(self.specialist_name, line, manager, usage_context=usage)
-            await self.output_callback(f"\n{res.get('content')}\n📊 {usage['total']} tokens.")
+        # AI Inference Mode
+        await self.output_callback(self.f(f"🧠 \033[1;30m{self.specialist_name} думает...\033[0m", f"🧠 *{self.specialist_name} думает...*"))
+        from src.ai.handlers.timeweb import TimewebHandler
+        from src.core.managers.discord_manager import DiscordManager
+        
+        handler = TimewebHandler()
+        guild = self.bot.guilds[0] if self.bot.guilds else None
+        if not guild:
+            await self.output_callback("❌ Ошибка: Бот не подключен ни к одному серверу.")
+            return
+        manager = DiscordManager(guild, bot=self.bot)
+        
+        usage = {"total": 0}
+        res = await handler._run_agent(self.specialist_name, line, manager, usage_context=usage)
+        
+        content = res.get('content', '')
+        reports = res.get('reports', [])
+        
+        out = [content]
+        if reports:
+            out.append(self.f("\n\033[1;36m--- ОТЧЕТ ВЫПОЛНЕНИЯ ---\033[0m", "\n**--- ОТЧЕТ ВЫПОЛНЕНИЯ ---**"))
+            for r in reports:
+                out.append(f" • {r}")
+                
+        out.append(self.f(f"\n\033[1;30m📊 {usage['total']} tokens.\033[0m", f"\n*📊 {usage['total']} tokens.*"))
+        await self.output_callback("\n".join(out))

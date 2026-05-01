@@ -28,8 +28,22 @@ class ToolRegistry:
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}
 
-    def register(self, tool: BaseTool):
-        self._tools[tool.name] = tool
+    def register(self, name_or_tool: Any):
+        """Register a tool directly or as a decorator."""
+        if isinstance(name_or_tool, str):
+            def decorator(func):
+                self._tools[name_or_tool] = func
+                return func
+            return decorator
+        
+        # Handle BaseTool objects
+        tool_name = getattr(name_or_tool, "name", None)
+        if not tool_name and hasattr(name_or_tool, "__name__"):
+            tool_name = name_or_tool.__name__
+            
+        if tool_name:
+            self._tools[tool_name] = name_or_tool
+        return name_or_tool
 
     async def execute(self, name: str, context: ToolContext, args: Dict[str, Any]) -> Any:
         tool = self._tools.get(name)

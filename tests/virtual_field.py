@@ -31,6 +31,12 @@ class VirtualUser:
     name: str
     roles: List[int] = field(default_factory=list)
 
+@dataclass
+class VirtualMessage:
+    channel_name: str
+    content: str
+    is_embed: bool = False
+
 class VirtualField:
     """A simulation environment for WizardBot AI behavior testing."""
     
@@ -43,6 +49,7 @@ class VirtualField:
         self.users: Dict[int, VirtualUser] = {
             999: VirtualUser(999, "AdminUser", roles=[1])
         }
+        self.messages: List[VirtualMessage] = []
         self.logs: List[str] = []
         self.shared_state: Dict[str, Any] = {}
         
@@ -103,23 +110,43 @@ class VirtualField:
             return f"Роль создана. ID: {rid}"
 
         elif name == "query_users":
-            q = args['query'].lower()
+            q = args.get('query', "").lower()
+            if not q: return "Ошибка: Пустой запрос."
             found = [u for u in self.users.values() if q in u.name.lower()]
             if not found: return "Пользователи не найдены."
             return "\n".join([f"- {u.name} (ID: {u.id})" for u in found])
 
         elif name == "assign_role_to_user":
-            u_id = int(args['user_name_or_id']) if args['user_name_or_id'].isdigit() else 0
-            r_id = int(args['role_name_or_id']) if args['role_name_or_id'].isdigit() else 0
-            if u_id in self.users and r_id in self.roles:
-                self.users[u_id].roles.append(r_id)
-                self._log(f"Роль {self.roles[r_id].name} назначена пользователю {self.users[u_id].name}")
-                return "Успешно."
+            try:
+                u_id = int(args['user_name_or_id']) if str(args['user_name_or_id']).isdigit() else 0
+                r_id = int(args['role_name_or_id']) if str(args['role_name_or_id']).isdigit() else 0
+                if u_id in self.users and r_id in self.roles:
+                    self.users[u_id].roles.append(r_id)
+                    self._log(f"Роль {self.roles[r_id].name} назначена пользователю {self.users[u_id].name}")
+                    return "Успешно."
+            except: pass
             return "Ошибка: Пользователь или роль не найдены."
+
+        elif name == "delete_all_channels":
+            self.channels = {}
+            self._log("❌ Все каналы удалены.")
+            return "Все каналы успешно удалены."
+
+        elif name == "delete_all_roles":
+            self.roles = {1: self.roles[1]} # Keep everyone
+            for u in self.users.values(): u.roles = [1]
+            self._log("❌ Все кастомные роли удалены.")
+            return "Все кастомные роли успешно удалены."
+
+        elif name == "send_webhook_message" or name == "send_embed_message":
+            msg = args.get('content') or args.get('description') or args.get('title', "Embed Message")
+            ch = args.get('channel_name', 'unknown')
+            self.messages.append(VirtualMessage(ch, msg, is_embed=(name == "send_embed_message")))
+            self._log(f"✉️ СООБЩЕНИЕ в {ch}: {msg}")
+            return "Сообщение отправлено."
 
         elif name == "ask_user_clarification":
             self._log(f"❓ ЗАПРОС УТОЧНЕНИЯ: {args['question']}")
-            # Auto-answer for simulation? Let's return the first option or True
             return args.get('options', ["Yes"])[0]
 
         return f"Инструмент {name} выполнен (симуляция)."
@@ -137,6 +164,7 @@ class VirtualField:
         class MockGuild:
             def __init__(self, name, owner_id):
                 self.name = name
+                self.id = 123456789
                 self.owner_id = owner_id
                 self.member_count = 100
         return MockGuild(self.server_name, 999)
@@ -146,7 +174,7 @@ class VirtualField:
         class MockInteraction:
             def __init__(self):
                 self.user = type('obj', (object,), {'id': 999, 'name': 'AdminUser'})
-                self.channel = type('obj', (object,), {'name': 'general'})
+                self.channel = type('obj', (object,), {'id': 555, 'name': 'general'})
         return MockInteraction()
 
 async def run_simulation(prompt: str):
@@ -155,28 +183,38 @@ async def run_simulation(prompt: str):
     from unittest.mock import AsyncMock, patch
     from src.core.managers.billing_manager import billing_manager
 
-    # Mock DB calls
-    billing_manager.save_message = AsyncMock()
-    billing_manager.deduct_tokens = AsyncMock()
-
-    field = VirtualField()
-    handler = TimewebHandler()
+    # Включаем режим калибровки для реального бота через файл-флаг
+    calibration_file = ".calibration"
+    with open(calibration_file, "w") as f:
+        f.write("active")
     
-    print(f"\n🚀 [SIMULATION START]")
-    print(f"Запрос: {prompt}")
-    print("-" * 40)
-    
-    async def status_callback(agent, text, node_id, parent_id, status="running"):
-        color = "\033[94m" if status == "running" else "\033[92m" if status == "done" else "\033[91m"
-        reset = "\033[0m"
-        print(f"   {color}[{agent}]{reset} {text}")
+    try:
+        # Mock DB calls
+        billing_manager.save_message = AsyncMock()
+        billing_manager.deduct_tokens = AsyncMock()
 
-    result = await handler.processed_prompt(
-        prompt, 
-        field, 
-        status_callback=status_callback, 
-        user_perms="administrator"
-    )
+        field = VirtualField()
+        handler = TimewebHandler()
+        
+        print(f"\n🚀 [SIMULATION START]")
+        print(f"Запрос: {prompt}")
+        print("-" * 40)
+        
+        async def status_callback(agent, text, node_id, parent_id, status="running"):
+            color = "\033[94m" if status == "running" else "\033[92m" if status == "done" else "\033[91m"
+            reset = "\033[0m"
+            print(f"   {color}[{agent}]{reset} {text}")
+
+        result = await handler.processed_prompt(
+            prompt, 
+            field, 
+            status_callback=status_callback, 
+            user_perms="administrator"
+        )
+    finally:
+        # Убираем флаг калибровки
+        if os.path.exists(calibration_file):
+            os.remove(calibration_file)
     
     print("-" * 40)
     print(f"📊 [ИТОГОВЫЙ ОТВЕТ]:\n{result}")
@@ -195,6 +233,12 @@ async def run_simulation(prompt: str):
     for c in field.channels.values():
         cat = f" (в категории {field.channels[c.category_id].name})" if c.category_id and c.category_id in field.channels else ""
         print(f"  - {c.name} [{c.type}]{cat}")
+
+    if field.messages:
+        print(f"\n--- Отправленные сообщения ({len(field.messages)}) ---")
+        for m in field.messages:
+            prefix = "[EMBED]" if m.is_embed else "[TEXT]"
+            print(f"  - {prefix} в #{m.channel_name}: {m.content[:50]}...")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

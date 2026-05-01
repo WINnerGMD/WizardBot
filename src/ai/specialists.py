@@ -15,14 +15,14 @@ SPECIALISTS = {
             "6. NEVER ask the user how to use your tools or how to execute a task. Just execute it using delegation.\n"
             "NO DIALOGUE. FAILURE TO DELEGATE = SYSTEM CRASH."
         ),
-        "model": "deepseek-v3",
+        "model": "deepseek/deepseek-v4-flash",
         "tools": ["delegate_to_sub_agent", "create_pipeline", "ask_user_clarification"]
     },
 
     "user_specialist": {
         "name": "USER_MANAGER",
         "instruction": "MANAGE USERS AND ROLES. Use tools to create/modify roles. Check role style via get_role_style_sample ONLY IF required to match server conventions. Use 'out' in pipelines to share user IDs. Ensure you list roles before creating to avoid duplicates.",
-        "model": "deepseek-v3",
+        "model": "deepseek/deepseek-v4-flash",
         "tools": ["list_roles", "query_users", "assign_role_to_user", "remove_role_from_user", "remove_all_roles_from_user", "create_role", "edit_role", "delete_role", "delete_all_roles", "ask_user_clarification", "create_pipeline", "get_role_style_sample"]
     },
 
@@ -35,21 +35,21 @@ SPECIALISTS = {
             "3. Logical grouping is mandatory. Match existing server style if possible.\n"
             "4. If you lack context (e.g. unknown game), use 'delegate_to_sub_agent' to ask 'web_researcher' for info before building."
         ),
-        "model": "deepseek-v3",
+        "model": "deepseek/deepseek-v4-flash",
         "tools": ["list_channels", "list_roles", "create_category", "create_text_channel", "create_voice_channel", "create_forum_channel", "delete_channel", "delete_all_channels", "set_channel_permissions", "edit_channel", "ask_user_clarification", "create_pipeline", "get_channel_style_sample", "delegate_to_sub_agent"]
     },
 
     "mass_action_specialist": {
         "name": "MASS_ACTION_SPECIALIST",
         "instruction": "EXECUTE BULK OPERATIONS. Use query_users to define target pool. Report progress clearly.",
-        "model": "deepseek-v3",
+        "model": "deepseek/deepseek-v4-flash",
         "tools": ["list_server_info", "query_users", "assign_role_to_all_users", "assign_role_to_random_users", "rename_all_users", "delete_all_channels", "delete_all_roles", "ask_user_clarification"]
     },
 
     "chat_specialist": {
         "name": "CHAT_SPECIALIST",
         "instruction": "SEND MESSAGES AND MANAGE HISTORY. FORMAT DATA CLEARLY. Use tables for stats.",
-        "model": "deepseek-v3",
+        "model": "deepseek/deepseek-v4-flash",
         "tools": ["send_webhook_message", "send_embed_message", "read_channel_history", "pin_message", "ask_user_clarification"]
     },
 
@@ -66,13 +66,13 @@ SPECIALISTS = {
             "5. LANGUAGE: Always respond in Russian.\n"
             "Create a single, polished response that a normal Discord admin would love to read."
         ),
-        "model": "deepseek-chat"
+        "model": "deepseek/deepseek-v4-flash"
     },
 
     "web_researcher": {
         "name": "WEB_RESEARCHER",
         "instruction": "SEARCH THE WEB AND READ WEBPAGES. Gather factual information, wikis, or context. Formulate clear, concise summaries for the agent who delegated the task to you.",
-        "model": "deepseek-v3",
+        "model": "deepseek/deepseek-v4-flash",
         "tools": ["search_web", "read_webpage"]
     }
 }

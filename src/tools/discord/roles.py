@@ -29,7 +29,7 @@ class EditRoleTool(BaseTool):
         if not check_perms(ctx.user, manage_roles=True):
             return "⛔ ОШИБКА: У вас нет прав на управление ролями в Discord."
         ref = args.get('role_id', '')
-        role = resolve_role(ctx.guild, ref)
+        role = await resolve_role(ctx.guild, ref)
         if not role: return "Роль не найдена."
         if not can_touch_role(ctx.user, role):
             return f"⛔ ОШИБКА: Роль '{role.name}' выше или равна вашей по иерархии."
@@ -49,7 +49,7 @@ class DeleteRoleTool(BaseTool):
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
         if not check_perms(ctx.user, manage_roles=True):
             return "⛔ ОШИБКА: У вас нет прав на управление ролями в Discord."
-        role = resolve_role(ctx.guild, args['name'])
+        role = await resolve_role(ctx.guild, args['name'])
         if role: 
             if not can_touch_role(ctx.user, role):
                 return f"⛔ ОШИБКА: Роль '{role.name}' выше или равна вашей по иерархии."
@@ -66,7 +66,7 @@ class AssignRoleToUserTool(BaseTool):
         r_query = args.get('role_name_or_id')
         u_query = args.get('user_name_or_id')
         
-        role = resolve_role(ctx.guild, r_query)
+        role = await resolve_role(ctx.guild, r_query)
         if not role:
             try:
                 role = await ctx.guild.create_role(name=r_query, reason="Авто-создание по запросу")
@@ -104,7 +104,7 @@ class RemoveRoleFromUserTool(BaseTool):
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
         if not check_perms(ctx.user, manage_roles=True):
             return "⛔ ОШИБКА: У вас нет прав на управление ролями в Discord."
-        role = resolve_role(ctx.guild, args.get('role_name_or_id'))
+        role = await resolve_role(ctx.guild, args.get('role_name_or_id'))
         q = args.get('user_name_or_id')
         cache = getattr(ctx.manager, '_member_cache', None)
         member, matches = await resolve_member(ctx.guild, q, cache=cache)
@@ -133,7 +133,7 @@ class AssignRoleToAllUsersTool(BaseTool):
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
         if not check_perms(ctx.user, manage_roles=True):
             return "⛔ ОШИБКА: У вас нет прав на управление ролями в Discord."
-        role = resolve_role(ctx.guild, args['role_name_or_id'])
+        role = await resolve_role(ctx.guild, args['role_name_or_id'])
         if not role: return "Роль не найдена."
         if not can_touch_role(ctx.user, role):
             return f"⛔ ОШИБКА: Роль '{role.name}' выше или равна вашей по иерархии."

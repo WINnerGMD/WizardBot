@@ -7,30 +7,57 @@ from src.core.utils.discord_utils import resolve_member
 class ListServerInfoTool(BaseTool):
     name = "list_server_info"
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
+        roles = {r.name: r.id for r in ctx.guild.roles if r.name != "@everyone"}
+        if not roles:
+            try:
+                fetched = await ctx.guild.fetch_roles()
+                roles = {r.name: r.id for r in fetched if r.name != "@everyone"}
+            except: pass
+
+        categories = {cat.name: cat.id for cat in ctx.guild.categories}
+        channels = [f"{c.name}:{c.id} (Type: {c.type})" for c in ctx.guild.channels if not isinstance(c, discord.CategoryChannel)]
+        
+        if not channels:
+            try:
+                fetched_ch = await ctx.guild.fetch_channels()
+                categories = {cat.name: cat.id for cat in fetched_ch if isinstance(cat, discord.CategoryChannel)}
+                channels = [f"{c.name}:{c.id} (Type: {c.type})" for c in fetched_ch if not isinstance(c, discord.CategoryChannel)]
+            except: pass
+
         return {
-            "roles": {r.name: r.id for r in ctx.guild.roles if r.name != "@everyone"},
-            "categories": {cat.name: cat.id for cat in ctx.guild.categories},
-            "channels": [f"{c.name}:{c.id} (Type: {c.type})" for c in ctx.guild.channels if not isinstance(c, discord.CategoryChannel)],
+            "roles": roles,
+            "categories": categories,
+            "channels": channels,
         }
 
 class ListRolesTool(BaseTool):
     name = "list_roles"
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
         roles = {r.name: r.id for r in ctx.guild.roles if r.name != "@everyone"}
+        # Если ролей подозрительно мало (только @everyone), пробуем фетч
         if not roles:
             try:
                 fetched_roles = await ctx.guild.fetch_roles()
                 roles = {r.name: r.id for r in fetched_roles if r.name != "@everyone"}
-            except:
-                pass
+            except: pass
         return roles
 
 class ListChannelsTool(BaseTool):
     name = "list_channels"
     async def execute(self, ctx: ToolContext, args: Dict[str, Any]) -> Any:
+        categories = {cat.name: cat.id for cat in ctx.guild.categories}
+        channels = [f"{c.name}:{c.id} (Type: {c.type}, Category: {c.category.name if c.category else 'None'})" for c in ctx.guild.channels if not isinstance(c, discord.CategoryChannel)]
+        
+        if not channels and not categories:
+            try:
+                fetched = await ctx.guild.fetch_channels()
+                categories = {cat.name: cat.id for cat in fetched if isinstance(cat, discord.CategoryChannel)}
+                channels = [f"{c.name}:{c.id} (Type: {c.type}, Category: {c.category.name if c.category else 'None'})" for c in fetched if not isinstance(c, discord.CategoryChannel)]
+            except: pass
+
         return {
-            "categories": {cat.name: cat.id for cat in ctx.guild.categories},
-            "channels": [f"{c.name}:{c.id} (Type: {c.type}, Category: {c.category.name if c.category else 'None'})" for c in ctx.guild.channels if not isinstance(c, discord.CategoryChannel)],
+            "categories": categories,
+            "channels": channels,
         }
 
 class FetchMessageInfoTool(BaseTool):
