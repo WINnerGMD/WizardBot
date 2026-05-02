@@ -1,3 +1,10 @@
+"""
+[AI CONTEXT]
+Defines the AI Agents (Specialists) and their strict operational instructions.
+WARNING: When adding or modifying a specialist, ensure their tools match 
+the ones available in `src/tools/definitions.py`. The Orchestrator relies on 
+these exact descriptions to build pipelines.
+"""
 import os
 
 # Specialization instructions for the AI agents

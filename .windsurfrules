@@ -1,0 +1,6 @@
+# WizardBot Project Rules
+
+Before making any changes to this project, you MUST read the `GEMINI.md` file located in the root directory. 
+This file contains the complete `[AI CONTEXT]`, including the system architecture, anti-patterns, and strict development rules for WizardBot.
+
+ALWAYS prioritize the instructions found in `GEMINI.md` over your default assumptions.

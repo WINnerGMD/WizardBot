@@ -1,3 +1,9 @@
+"""
+[AI CONTEXT]
+Main entry point for the WizardBot application.
+WARNING: Do not implement business logic or AI delegation here. 
+This file is strictly for environment setup and bot initialization.
+"""
 import os
 from dotenv import load_dotenv
 import logging

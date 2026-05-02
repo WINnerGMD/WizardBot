@@ -15,7 +15,7 @@ class TimewebHandler:
     def __init__(self):
         self.api_key = os.getenv("TIMEWEB_API_KEY")
         self.base_url = os.getenv("TIMEWEB_BASE_URL", "https://api.timeweb.ai/v1")
-        self.model = "deepseek-v4-flash"
+        self.model = "deepseek/deepseek-v4-flash"
         
         if not self.api_key:
             print("🚨 [CRITICAL] TIMEWEB_API_KEY is not set in environment!")
@@ -122,8 +122,6 @@ class TimewebHandler:
 
         # Use model from specialist config if available, otherwise fallback to handler default
         model_to_use = spec.get("model", self.model)
-        if "/" in model_to_use:
-            model_to_use = model_to_use.split("/")[-1]
 
         system_content = f"{system_suffix}\n{self._get_global_enforcement()}\nSPECIALIST ROLE: {spec['instruction']}"
         messages = [{"role": "system", "content": system_content}]

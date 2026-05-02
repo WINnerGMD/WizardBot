@@ -1,3 +1,10 @@
+"""
+[AI CONTEXT]
+Core execution engine for tools.
+WARNING: Do not change the signature of `execute` or the `ToolContext` 
+without updating the pipeline logic in the Orchestrator/Handlers. 
+Tools must return either a string or a Dict containing 'content' and metadata (like 'id').
+"""
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Union
 import discord
