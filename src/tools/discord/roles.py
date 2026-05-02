@@ -21,7 +21,10 @@ class CreateRoleTool(BaseTool):
             mentionable=args.get('mentionable', False), 
             permissions=perms
         )
-        return f"Роль '{role.name}' (ID: {role.id}) создана."
+        return {
+            "content": f"Роль '{role.name}' (ID: {role.id}) создана.",
+            "id": str(role.id)
+        }
 
 class EditRoleTool(BaseTool):
     name = "edit_role"

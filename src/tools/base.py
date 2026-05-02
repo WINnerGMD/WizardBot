@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 import discord
 
 class ToolContext:
@@ -20,7 +20,11 @@ class BaseTool(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, context: ToolContext, args: Dict[str, Any]) -> Any:
+    async def execute(self, context: ToolContext, args: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
+        """
+        Executes the tool logic.
+        Returns either a simple string or a dictionary containing 'content' and optional metadata like 'id'.
+        """
         pass
 
 class ToolRegistry:

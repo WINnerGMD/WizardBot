@@ -14,7 +14,10 @@ class CreateCategoryTool(BaseTool):
         if not name: return "⛔ ОШИБКА: Не указано имя категории."
         overwrites = await build_overwrites(ctx.guild, args.get('permissions'))
         cat = await ctx.guild.create_category(name, overwrites=overwrites or None)
-        return f"Категория '{name}' (ID: {cat.id}) создана."
+        return {
+            "content": f"Категория '{name}' (ID: {cat.id}) создана.",
+            "id": str(cat.id)
+        }
 
 class CreateTextChannelTool(BaseTool):
     name = "create_text_channel"
@@ -29,7 +32,10 @@ class CreateTextChannelTool(BaseTool):
         raw_nsfw = args.get('nsfw', False)
         nsfw = str(raw_nsfw).lower() == 'true' if isinstance(raw_nsfw, str) else bool(raw_nsfw)
         ch = await ctx.guild.create_text_channel(name, category=cat, overwrites=overwrites or None, nsfw=nsfw)
-        return f"Канал '{name}' (ID: {ch.id}, NSFW: {nsfw}) создан."
+        return {
+            "content": f"Канал '{name}' (ID: {ch.id}, NSFW: {nsfw}) создан.",
+            "id": str(ch.id)
+        }
 
 class CreateVoiceChannelTool(BaseTool):
     name = "create_voice_channel"
@@ -42,7 +48,10 @@ class CreateVoiceChannelTool(BaseTool):
         cat = await resolve_channel(ctx.guild, cat_ref)
         overwrites = await build_overwrites(ctx.guild, args.get('permissions'))
         ch = await ctx.guild.create_voice_channel(name, category=cat, overwrites=overwrites or None)
-        return f"Голосовой канал '{name}' (ID: {ch.id}) создан."
+        return {
+            "content": f"Голосовой канал '{name}' (ID: {ch.id}) создан.",
+            "id": str(ch.id)
+        }
 
 class EditChannelTool(BaseTool):
     name = "edit_channel"

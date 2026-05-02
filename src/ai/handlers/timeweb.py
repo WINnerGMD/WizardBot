@@ -15,11 +15,18 @@ class TimewebHandler:
     def __init__(self):
         self.api_key = os.getenv("TIMEWEB_API_KEY")
         self.base_url = os.getenv("TIMEWEB_BASE_URL", "https://api.timeweb.ai/v1")
-        self.model = "deepseek/deepseek-v4-flash"
+        self.model = "deepseek-v4-flash"
         
+        if not self.api_key:
+            print("🚨 [CRITICAL] TIMEWEB_API_KEY is not set in environment!")
+        else:
+            print(f"📡 TimewebHandler initialized. Key: {self.api_key[:4]}...{self.api_key[-4:] if len(self.api_key)>8 else ''}")
+
         self.client = AsyncOpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            timeout=120.0,
+            max_retries=3
         )
         self.show_usage = True
         self.active_agents = 0
@@ -115,6 +122,8 @@ class TimewebHandler:
 
         # Use model from specialist config if available, otherwise fallback to handler default
         model_to_use = spec.get("model", self.model)
+        if "/" in model_to_use:
+            model_to_use = model_to_use.split("/")[-1]
 
         system_content = f"{system_suffix}\n{self._get_global_enforcement()}\nSPECIALIST ROLE: {spec['instruction']}"
         messages = [{"role": "system", "content": system_content}]
@@ -136,6 +145,9 @@ class TimewebHandler:
             for turn in range(max_turns):
                 await update_status(f"💭 Ход {turn + 1}")
 
+                # Debug request
+                print(f"📡 Sending request to Timeweb: model={model_to_use}, messages_count={len(messages)}, tools_count={len(tools) if tools else 0}")
+                
                 try:
                     response = await self.client.chat.completions.create(
                         model=model_to_use,
@@ -144,6 +156,7 @@ class TimewebHandler:
                         tool_choice="auto" if tools else None,
                     )
                 except Exception as e:
+                    print(f"❌ Timeweb API Error: {e}")
                     return {"content": f"AI Error: {e}", "reports": reports, "stop_reason": "error"}
 
                 msg = response.choices[0].message
@@ -323,12 +336,17 @@ class TimewebHandler:
                     res = f"Ошибка: {e}"
 
                 context["last"] = res
-                res_str = res.get("content", "") if isinstance(res, dict) else str(res)
                 
                 # ID extraction
                 extracted_id = None
-                if isinstance(res_str, str):
-                    # Try to find ID in (ID: 123) or ID: 123 format
+                
+                # 1. Structured extraction (priority)
+                if isinstance(res, dict) and "id" in res:
+                    extracted_id = str(res["id"])
+                    res_str = res.get("content", str(res))
+                else:
+                    res_str = str(res)
+                    # 2. Regex fallback
                     m = re.search(r'(?:\(ID:\s*|ID:\s*)(\d+)\)?', res_str)
                     if m: extracted_id = m.group(1)
                 
